@@ -13,6 +13,7 @@ struct ContentView: View {
                 }
                 URLBar()
                 InfoPanel()
+                PresetBar()
                 OptionsView()
                 CommandPreview()
             }

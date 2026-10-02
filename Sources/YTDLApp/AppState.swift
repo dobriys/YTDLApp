@@ -16,19 +16,33 @@ final class AppState {
     var analyzeError: String?
     var queue: [DownloadItem] = []
     var version = ""
+    var presets: [Preset]
+    var selectedPresetID: UUID?
 
     let executable = YTDLP.locate()
     let maxConcurrent = 2
 
     @ObservationIgnored private var analyzeToken = 0
     private static let optionsKey = "options"
+    private static let presetsKey = "presets"
+    private static let selectedPresetKey = "selectedPreset"
 
     private init() {
-        if let data = UserDefaults.standard.data(forKey: Self.optionsKey),
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Self.optionsKey),
            let saved = try? JSONDecoder().decode(DownloadOptions.self, from: data) {
             options = saved
         } else {
             options = DownloadOptions()
+        }
+        if let data = defaults.data(forKey: Self.presetsKey),
+           let saved = try? JSONDecoder().decode([Preset].self, from: data) {
+            presets = saved
+            selectedPresetID = defaults.string(forKey: Self.selectedPresetKey).flatMap(UUID.init(uuidString:))
+        } else {
+            presets = Preset.builtIn
+            let current = options
+            selectedPresetID = presets.first { current == current.applying($0.options) }?.id
         }
         if let exe = executable {
             Task {
@@ -44,6 +58,65 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: Self.optionsKey)
         }
     }
+
+    // MARK: Пресеты
+
+    var selectedPreset: Preset? {
+        presets.first { $0.id == selectedPresetID }
+    }
+
+    var isPresetModified: Bool {
+        guard let preset = selectedPreset else { return false }
+        return options != options.applying(preset.options)
+    }
+
+    func applyPreset(_ preset: Preset) {
+        selectedPresetID = preset.id
+        options = options.applying(preset.options)
+        savePresets()
+    }
+
+    func updateSelectedPreset() {
+        guard let i = presets.firstIndex(where: { $0.id == selectedPresetID }) else { return }
+        presets[i].options = options
+        savePresets()
+    }
+
+    func saveAsNewPreset(named name: String) {
+        let preset = Preset(name: name, options: options)
+        presets.append(preset)
+        selectedPresetID = preset.id
+        savePresets()
+    }
+
+    func renameSelectedPreset(to name: String) {
+        guard let i = presets.firstIndex(where: { $0.id == selectedPresetID }) else { return }
+        presets[i].name = name
+        savePresets()
+    }
+
+    func deleteSelectedPreset() {
+        presets.removeAll { $0.id == selectedPresetID }
+        selectedPresetID = nil
+        savePresets()
+    }
+
+    /// Возвращает встроенные пресеты к исходному виду, свои пресеты не трогает.
+    func restoreBuiltInPresets() {
+        let builtInIDs = Set(Preset.builtIn.map(\.id))
+        presets = Preset.builtIn + presets.filter { !builtInIDs.contains($0.id) }
+        savePresets()
+    }
+
+    private func savePresets() {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONEncoder().encode(presets) {
+            defaults.set(data, forKey: Self.presetsKey)
+        }
+        defaults.set(selectedPresetID?.uuidString, forKey: Self.selectedPresetKey)
+    }
+
+    // MARK: Ссылки и загрузка
 
     var urls: [String] {
         urlText.split(whereSeparator: \.isWhitespace).map(String.init)

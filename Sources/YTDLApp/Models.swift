@@ -160,3 +160,64 @@ struct DownloadOptions: Codable, Equatable {
     var rateLimit = ""
     var fragments = 1
 }
+
+extension DownloadOptions {
+    /// Настройки пресета поверх текущих. Папка общая для всех пресетов, а элементы
+    /// плейлиста и фрагмент относятся к конкретной ссылке — они остаются как были.
+    func applying(_ preset: DownloadOptions) -> DownloadOptions {
+        var result = preset
+        result.outputDir = outputDir
+        result.playlistItems = playlistItems
+        result.cutSection = cutSection
+        result.sectionStart = sectionStart
+        result.sectionEnd = sectionEnd
+        return result
+    }
+}
+
+// MARK: - Пресеты
+
+struct Preset: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var options: DownloadOptions
+
+    static let builtIn: [Preset] = {
+        func make(_ n: Int, _ name: String, _ configure: (inout DownloadOptions) -> Void) -> Preset {
+            var o = DownloadOptions()
+            configure(&o)
+            return Preset(id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))!, name: name, options: o)
+        }
+        return [
+            make(1, "Лучшее видео") { _ in },
+            make(2, "1080p с субтитрами") {
+                $0.formatMode = .maxHeight
+                $0.maxHeight = 1080
+                $0.writeSubs = true
+                $0.subLangs = "ru,en"
+                $0.embedSubs = true
+            },
+            make(3, "Музыка mp3") {
+                $0.formatMode = .audioOnly
+                $0.audioFormat = .mp3
+                $0.audioQuality = 0
+                $0.embedChapters = false
+                $0.template = "%(uploader)s — %(title)s.%(ext)s"
+            },
+            make(4, "Подкаст / лекция") {
+                $0.formatMode = .audioOnly
+                $0.audioFormat = .m4a
+                $0.audioQuality = 2
+                $0.sponsorBlock = true
+            },
+            make(5, "Архив канала") {
+                $0.useArchive = true
+                $0.template = "%(playlist,uploader)s/%(playlist_index&{:03d} - |)s%(title)s.%(ext)s"
+            },
+            make(6, "Экономно (720p)") {
+                $0.formatMode = .maxHeight
+                $0.maxHeight = 720
+            },
+        ]
+    }()
+}
